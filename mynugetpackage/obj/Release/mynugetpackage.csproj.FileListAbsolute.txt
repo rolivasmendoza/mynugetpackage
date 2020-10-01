@@ -1,0 +1,5 @@
+C:\Users\J Roberto Olivas\source\repos\mynugetpackage\mynugetpackage\bin\Release\mynugetpackage.dll
+C:\Users\J Roberto Olivas\source\repos\mynugetpackage\mynugetpackage\bin\Release\mynugetpackage.pdb
+C:\Users\J Roberto Olivas\source\repos\mynugetpackage\mynugetpackage\obj\Release\mynugetpackage.csproj.CoreCompileInputs.cache
+C:\Users\J Roberto Olivas\source\repos\mynugetpackage\mynugetpackage\obj\Release\mynugetpackage.dll
+C:\Users\J Roberto Olivas\source\repos\mynugetpackage\mynugetpackage\obj\Release\mynugetpackage.pdb

@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<package >
+  <metadata>
+    <id>Syncfusion</id>
+    <version>1.0.0.4</version>
+    <authors>Syncfusion</authors>
+    <owners>Syncfusion</owners>
+    <description>MyNuGet Package Example</description>
+    <copyright>Copyright ©  2020</copyright>
+  </metadata>
+  <files>
+    <file src="C:\Users\J Roberto Olivas\source\repos\mynugetpackage\mynugetpackage\Bin\Release\mynugetpackage.dll" target="\lib\net461" />
+    <file src="C:\Users\J Roberto Olivas\source\repos\mynugetpackage\mynugetpackage\Bin\Release\mynugetpackage.pdb" target="\lib\net461" />
+  </files>  
+</package>

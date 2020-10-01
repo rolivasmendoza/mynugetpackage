@@ -1,0 +1,404 @@
+﻿<#@ template debug="false" hostspecific="true" language="C#" #>
+<#@ assembly name="envdte" #>
+<#@ assembly name="envdte100" #>
+<#@ import namespace="EnvDTE" #>
+<#@ import namespace="EnvDTE100" #>
+<#@ import namespace="System" #>
+<#@ assembly name="System.Core" #>
+<#@ assembly name="System.Windows.Forms" #>
+<#@ assembly name="System.Drawing" #>
+<#@ assembly name="System.Design" #>
+<#@ import namespace="System.IO" #>
+<#@ import namespace="System.Design" #>
+<#@ import namespace="System.Drawing" #>
+<#@ import namespace="System.Resources" #>
+<#@ import namespace="System.Diagnostics" #>
+<#@ import namespace="System.Linq" #>
+<#@ import namespace="System.Text" #>
+<#@ import namespace="System.Text.RegularExpressions" #>
+<#@ import namespace="System.Collections.Generic" #>
+<#@ import namespace="System.IO"#>
+<#@ output extension=".log" #>
+<#
+if (GetActiveConfiguration().ToUpper() != "DEBUG")
+{
+  Dictionary<string,string> assemblyInfoItems = GetPrjAssemblyInfo();
+
+  var packageFiles = GetPackageFiles();
+
+  if (packageFiles.Count > 0)
+   {
+#>
+<?xml version="1.0"?>
+<package >
+  <metadata>
+    <id><#= assemblyInfoItems["assemblyProduct"] #></id>
+    <version><#=assemblyInfoItems["assemblyVersion"] #></version>
+    <authors><#=assemblyInfoItems["assemblyCompany"] #></authors>
+    <owners><#=assemblyInfoItems["assemblyCompany"] #></owners>
+    <description><#=assemblyInfoItems["assemblyDescription"] #></description>
+    <copyright><#=assemblyInfoItems["assemblyCopyright"] #></copyright>
+  </metadata>
+  <files>
+<#
+  packageFiles.ForEach(item => {
+
+    var frmwrkMoniker = $"\\lib\\{GetTargetFrameworkMoniker()}";
+#>
+    <file src="<#=item #>" target="<#=frmwrkMoniker #>" />
+<#
+});
+#>
+  </files>  
+</package>
+<#
+     //Previous package files are deleted to avoid malfunctions
+     DeleteFiles(Path.GetDirectoryName(Host.TemplateFile), "*.nupkg");
+
+     //We save the .nuspec file
+     SaveOutput($"{assemblyInfoItems["assemblyProduct"]}.nuspec");
+
+     //We create the NuGet package
+     CreateNuGetPackage($"{assemblyInfoItems["assemblyProduct"]}.nuspec");
+
+     //We push the NuGet package
+     PushNuGetPackage($"{assemblyInfoItems["assemblyProduct"]}.{assemblyInfoItems["assemblyVersion"]}.nupkg","MyNuGetServer","http://localhost/mynugetserver/nuget");
+
+     //We delete package files in order to force package creation with a new release
+     ClearPackageFiles();
+#>
+<#= $"Package building finished at {System.DateTime.Now}" #>
+<#= $"The package {assemblyInfoItems["assemblyProduct"]}.{assemblyInfoItems["assemblyVersion"]}.nupkg was pushed to the server." #>
+<#
+   }
+   else
+   {
+#>
+<#= $"Building process ended at {System.DateTime.Now}" #>
+There is no release to push.
+<#
+     CleanGeneratedCode();
+   }
+}
+else
+{
+#>
+<#= $"Building process executed at {System.DateTime.Now}" #>
+Building and pushing NuGet packages are allowed on Release config only.
+<#
+}
+#>
+<#+
+private List<string> GetImageResources()
+{
+  var projectDir = GetProjectDir();
+  var pngResourcesDir = new DirectoryInfo(projectDir).Parent.FullName + "\\resources\\images\\pngs";
+  var iconResourcesDir = new DirectoryInfo(projectDir).Parent.FullName + "\\resources\\images\\icons";
+  var curResourcesDir = new DirectoryInfo(projectDir).Parent.FullName + "\\resources\\images\\cursors";
+
+  var result = new List<string>();
+
+  result.AddRange(Directory.GetFiles(pngResourcesDir,"*.png"));
+  result.AddRange(Directory.GetFiles(iconResourcesDir,"*.ico"));
+  result.AddRange(Directory.GetFiles(curResourcesDir,"*.cur"));
+
+  return result;
+}
+
+private List<string> GetSoundResources()
+{
+   var projectDir = GetProjectDir();
+   var wavResourcesDir = new DirectoryInfo(projectDir).Parent.FullName + "\\resources\\sounds";
+   var result = new List<string>();
+   result.AddRange(Directory.GetFiles(wavResourcesDir,"*.wav"));
+   
+   return result;
+}
+
+private byte[] FileToByteArray(string fileName)
+{
+   using (var fileStream = new FileStream(fileName, FileMode.Open, FileAccess.Read))
+   {
+       byte[] buffer;
+	     int length = (int)fileStream.Length;  // get file length
+       buffer = new byte[length];            // create buffer
+       int count;                            // actual number of bytes read
+       int sum = 0;                          // total number of bytes read
+
+       // read until Read method returns 0 (end of the stream has been reached)
+       while ((count = fileStream.Read(buffer, sum, length - sum)) > 0) sum += count;  // sum is a buffer offset for next reading
+	  
+       return buffer;
+   }
+}
+
+private bool GenResDesignerCode(string rescsFileName, string resxFileName, string className, string classNamespace, bool internalClass = true)
+{
+   string[] unmatchedElements;
+   var codeProvider = new Microsoft.CSharp.CSharpCodeProvider();
+   System.CodeDom.CodeCompileUnit code = System.Resources.Tools.StronglyTypedResourceBuilder.Create(resxFileName, className, classNamespace, codeProvider,internalClass, out unmatchedElements);
+
+   using(StreamWriter writer = new StreamWriter(rescsFileName, false,System.Text.Encoding.UTF8))
+    {
+       codeProvider.GenerateCodeFromCompileUnit(code, writer,new System.CodeDom.Compiler.CodeGeneratorOptions());
+    }
+
+   return unmatchedElements.Length == 0; 
+}
+
+private ProjectItem GetRootProjectItem(string itemName) => GetHostingProject().ProjectItems.Item(itemName);
+
+private ProjectItem GetProjectItem(string itemName, ProjectItems projectItems = null)
+{
+  ProjectItem result = null;
+
+  if (projectItems == null)
+   {
+    var project = GetHostingProject();
+    projectItems = project.ProjectItems;
+   }
+
+   var projectItem = projectItems.OfType<ProjectItem>().Where(item => string.Equals(item.Name,itemName)).FirstOrDefault();
+   if (projectItem != null) return projectItem;
+
+   projectItems.OfType<ProjectItem>().ToList().ForEach( item => result = GetProjectItem(itemName,item.ProjectItems));
+
+   return result;   
+}
+
+private Dictionary<string,string> GetAssemblyInfo(string assemblyFileName)
+{
+   var projectDir = GetProjectDir();
+
+   string assemblyInfoFileName = Path.Combine(projectDir,assemblyFileName); 
+   var assemblyInfoItems = File.ReadAllLines(assemblyInfoFileName,Encoding.GetEncoding("Windows-1252")).Where(line => line.Trim().Length > 0).ToList();
+
+   var result = new Dictionary<string,string>();
+   assemblyInfoItems.ForEach(item => 
+   {
+       var assemInfoTokens = item.Split(';');
+	   result.Add(assemInfoTokens[0],assemInfoTokens[1]);
+   });
+
+   return result;
+}
+
+public List<Project> GetProjects()
+{
+    IServiceProvider serviceProvider = (IServiceProvider)this.Host;
+    DTE dte = (DTE)serviceProvider.GetService(typeof(DTE));
+
+    var result = new List<Project>();
+
+    foreach (Project project in dte.Solution.Projects)
+    {
+	    result.Add(project);
+    }
+
+    return result;
+}
+
+public Project GetHostingProject()
+{
+    var projectDir = GetProjectDir();
+
+    IServiceProvider serviceProvider = (IServiceProvider)this.Host;
+    DTE dte = (DTE)serviceProvider.GetService(typeof(DTE));
+
+    foreach (Project project in dte.Solution.Projects)
+    {
+	   if (string.IsNullOrEmpty(project.FileName)) continue;
+	   if (string.Equals(new FileInfo(project.FileName).DirectoryName+"\\",projectDir)) return project;
+	}
+
+	return null;
+}
+
+private string GetSolutionDir()
+{
+   IServiceProvider serviceProvider = (IServiceProvider)this.Host;
+   DTE dte = (DTE)serviceProvider.GetService(typeof(DTE));
+
+   return System.IO.Path.GetDirectoryName(dte.Solution.FullName);
+}
+
+private string GetProjectDir() => Host.ResolveAssemblyReference("$(ProjectDir)");
+
+private string GetDefaultNamespace()
+{
+   var hostingProject = GetHostingProject();
+   return hostingProject.Properties.Item("DefaultNamespace").Value.ToString();
+}
+
+private List<Property> GetProjectProperties()
+{
+   Project currentProject = GetHostingProject();
+   return currentProject.Properties.OfType<Property>().ToList();
+}
+
+private string GetProjectName()
+{
+   Project currentProject = GetHostingProject();
+   return currentProject.Name;
+}
+
+private List<string> GetStringResources()
+{
+   var projectDir = GetProjectDir();
+
+   string resourcesFileName = Path.Combine(projectDir,"_artifacts\\resources\\strings\\StringsResources.csv"); 
+   return File.ReadAllLines(resourcesFileName,Encoding.GetEncoding("Windows-1252")).Where(line => line.Trim().Length > 0).ToList();
+}
+
+private void RemoveProjectItem(string itemName)
+{
+   var prjItem = GetProjectItem(itemName);
+   prjItem.Remove();
+}
+
+private void DeleteFiles(string folderName, string filePattern)
+{
+   var fileList = Directory.GetFiles(folderName,filePattern).ToList();
+   fileList.ForEach(fileName => File.Delete(fileName));
+}
+
+private void SaveOutput(string outputFileName) 
+{
+  string templateDirectory = Path.GetDirectoryName(Host.TemplateFile);
+  string outputFilePath = Path.Combine(templateDirectory, outputFileName);
+  File.WriteAllText(outputFilePath, this.GenerationEnvironment.ToString()); 
+  this.GenerationEnvironment.Remove(0, this.GenerationEnvironment.Length);
+}
+
+private void AddFileToProject(string fullPathFileName, string parentItemName, ProjectItem parentItem = null)
+{
+   ProjectItems projectItems;
+   ProjectItem projectItem;
+
+   if (parentItem == null)
+   {
+      Project currentProject = GetHostingProject();
+      projectItems = currentProject.ProjectItems;
+   }
+   else
+   {
+      projectItems = parentItem.ProjectItems;
+   }
+   
+   projectItem = projectItems.Item(parentItemName);
+   projectItem.ProjectItems.AddFromFile(fullPathFileName);
+}
+
+private string GetActiveConfiguration()
+{
+   Project currentProject = GetHostingProject();
+   return currentProject.ConfigurationManager.ActiveConfiguration.ConfigurationName;
+}
+
+private ProjectItems GetProjectItems()
+{
+   Project currentProject = GetHostingProject();
+   return currentProject.ProjectItems;
+}
+
+private void DisplayInOutputWindow(string outputString)
+{
+  IServiceProvider serviceProvider = (IServiceProvider)this.Host;
+  DTE dte = (DTE)serviceProvider.GetService(typeof(DTE));
+
+  var window = dte.Windows.Item(EnvDTE.Constants.vsWindowKindOutput);
+  var outputWindow = (OutputWindow) window.Object;
+  outputWindow.ActivePane.Activate();
+
+  outputWindow.ActivePane.OutputString(outputString);
+  outputWindow.ActivePane.OutputString("\n");
+}
+
+private Dictionary<string,string> GetPrjAssemblyInfo()
+{
+   var result = new Dictionary<string,string>();
+
+   result.Add("assemblyProduct",GetProjectPropValue("Product").Replace(" ","."));   
+   result.Add("assemblyVersion",GetProjectPropValue("AssemblyVersion"));   
+   result.Add("assemblyCompany",GetProjectPropValue("Company"));   
+   result.Add("assemblyDescription",GetProjectPropValue("Description"));   
+   result.Add("assemblyCopyright",GetProjectPropValue("Copyright"));   
+   result.Add("assemblyTrademark",GetProjectPropValue("Trademark"));   
+   result.Add("assemblyTitle",GetProjectPropValue("Title"));   
+
+   return result;
+}
+
+private string GetTargetFrameworkMoniker()
+{
+  var moniker = GetProjectPropValue("TargetFrameworkMoniker");
+  moniker = moniker.Replace(".NETFramework,Version=v",string.Empty).Replace(".",string.Empty);
+  
+  return $"net{moniker}";
+}
+
+private string GetProjectPropValue(string propName)
+{
+   var property = GetProjectProperties().Where(prop => string.Equals(prop.Name,propName)).FirstOrDefault();
+   return property == null ? string.Empty : property.Value.ToString();  
+}
+
+private List<string> GetPackageFiles()
+{
+   string dirName = GetProjectDir();
+   return System.IO.Directory.GetFiles(dirName + "Bin\\Release","*.*").ToList();
+}
+
+private void CreateNuGetPackage(string packageFileName)
+{
+  string templateDirectory = Path.GetDirectoryName(Host.TemplateFile);
+  ExecuteNuGetCmdLine($"pack \"{Path.Combine(templateDirectory,packageFileName)}\" -OutputDirectory \"{templateDirectory}\"");
+
+}
+
+private void PushNuGetPackage(string packageFileName, string apiKey, string nugetServerUrl)
+{
+  string templateDirectory = Path.GetDirectoryName(Host.TemplateFile);
+  ExecuteNuGetCmdLine($"push \"{Path.Combine(templateDirectory,packageFileName)}\" {apiKey} -Source {nugetServerUrl}");
+}
+
+private void ExecuteNuGetCmdLine(string cmdLineParameters)
+{
+  string templateDirectory = Path.GetDirectoryName(Host.TemplateFile);
+  ExecuteCommandLine($"\"{Path.Combine(templateDirectory, "nuget.exe")}\"",cmdLineParameters);
+}
+
+private void ExecuteCommandLine(string commandName, string cmdLineParameters)
+{
+  ProcessStartInfo startInfo = new ProcessStartInfo();
+  startInfo.CreateNoWindow = false;
+  startInfo.UseShellExecute = false;
+  startInfo.FileName = commandName;
+  startInfo.WindowStyle = ProcessWindowStyle.Hidden;
+  startInfo.Arguments = cmdLineParameters;
+
+  try
+  {
+     using (System.Diagnostics.Process exeProcess = System.Diagnostics.Process.Start(startInfo))
+      {
+        exeProcess.WaitForExit();
+      }
+   }
+  catch
+   {
+             // Log error.
+   }
+}
+
+private void CleanGeneratedCode()
+{
+  this.GenerationEnvironment.Remove(0, this.GenerationEnvironment.Length);
+}
+
+private void ClearPackageFiles()
+{
+   string dirName = GetProjectDir();
+   var fileList = System.IO.Directory.GetFiles(dirName + "\\Bin\\Release","*.*").ToList();
+   fileList.ForEach(item => System.IO.File.Delete(item));
+}
+#>
